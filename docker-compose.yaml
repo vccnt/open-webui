@@ -1,34 +1,54 @@
 services:
   ollama:
+    container_name: ollama
+    image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
     volumes:
       - ollama:/root/.ollama
-    container_name: ollama
-    pull_policy: always
     tty: true
     restart: unless-stopped
-    image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
+    pull_policy: always
 
   open-webui:
+    container_name: open-webui
     build:
       context: .
+      dockerfile: Dockerfile
       args:
         OLLAMA_BASE_URL: '/ollama'
-      dockerfile: Dockerfile
-    image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG-main}
-    container_name: open-webui
-    volumes:
-      - open-webui:/app/backend/data
+    restart: unless-stopped
     depends_on:
       - ollama
     ports:
-      - ${OPEN_WEBUI_PORT-3000}:8080
+      - "${OPEN_WEBUI_PORT-8081}:8080"
     environment:
-      - 'OLLAMA_BASE_URL=http://ollama:11434'
-      - 'WEBUI_SECRET_KEY='
+      - WEBUI_LANGUAGE=pl
+      - WEBUI_NAME=AI-VCCCHAT
+      - ENABLE_ADMIN_CHAT_ACCESS=false
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=
     extra_hosts:
       - host.docker.internal:host-gateway
+    volumes:
+      - open-webui:/app/backend/data
+    networks:
+      - openwebui_network
+
+  pipelines:
+    container_name: pipelines
+    image: ghcr.io/open-webui/pipelines:main
     restart: unless-stopped
+    ports:
+      - "9099:9099"
+    volumes:
+    - pipelines:/pipelines
+    networks:
+      - openwebui_network
+
+networks:
+  openwebui_network:
+    driver: bridge
 
 volumes:
   ollama: {}
   open-webui: {}
+  pipelines: {}
