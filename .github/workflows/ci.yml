@@ -1,0 +1,64 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - custom-main
+
+env:
+  REMOTE_PATH: ${{ vars.REMOTE_PATH }}
+  VPS_USER: ${{ secrets.VPS_USER }}
+  VPS_IP: ${{ vars.VPS_IP }}
+
+jobs:
+  git-operations:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Add SSH key
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      - name: Git Operations
+        run: |
+          ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_IP "
+            sudo chown -R debian:debian $REMOTE_PATH &&
+            sudo chmod -R 755 $REMOTE_PATH &&
+            cd $REMOTE_PATH &&
+            git config core.fileMode false &&
+            git config pull.rebase false &&
+            git fetch origin &&
+            if git show-ref --verify --quiet refs/heads/custom-main; then
+              git pull origin custom-main
+            else
+              git checkout -b custom-main origin/custom-main || echo 'Branch origin/custom-main does not exist.'
+            fi
+          "
+
+  deployment:
+    runs-on: ubuntu-latest
+    needs: git-operations
+    steps:
+      - name: Add SSH key
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      - name: Registry Login
+        run: echo "${{ secrets.REGISTRY_PASS }}" | docker login ${{ vars.REGISTRY_URL }} --username ${{ vars.REGISTRY_USER }} --password-stdin
+
+      - name: Deploy application using docker-compose
+        run: |
+          ssh -o StrictHostKeyChecking=no $VPS_USER@$VPS_IP << EOF
+            set -ex
+            cd $REMOTE_PATH
+            sudo docker-compose down
+            docker-compose pull
+            docker-compose build
+            sudo docker-compose up --build -d
+            sudo docker-compose ps
+          EOF
+
